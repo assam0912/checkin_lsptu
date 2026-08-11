@@ -1,0 +1,19 @@
+name: 漫画站每日签到
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # 每天上午8点执行
+  workflow_dispatch:      # 允许手动触发
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 执行签到请求
+        run: |
+          curl -X POST 'https://lsptu36.com/wp-json/b2/v1/userMission' \
+            -H 'authorization: ${{ secrets.AUTH_TOKEN }}' \
+            -H 'cookie: ${{ secrets.COOKIE }}' \
+            -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
+            -H 'referer: https://lsptu36.com/mission/always' \
+            -H 'content-length: 0'
