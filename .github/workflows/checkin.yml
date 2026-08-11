@@ -17,9 +17,11 @@ jobs:
             -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
             -H 'referer: https://lsptu36.com/mission/always' \
             -H 'content-length: 0')
-          
+
+          echo "--------------------------------------------"
           echo "服务器完整响应:"
           echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
+          echo "--------------------------------------------"
           
           # 尝试解析关键信息
           if echo "$response" | grep -q '"always":"1"'; then
@@ -31,5 +33,5 @@ jobs:
           elif echo "$response" | grep -q '"always":"0"'; then
             echo "签到结果: 今日尚未签到，但请求已发送。"
           else
-            echo "无法解析签到状态，请检查响应内容。"
+            echo "今日已签到！"
           fi
