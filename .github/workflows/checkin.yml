@@ -18,8 +18,18 @@ jobs:
             -H 'referer: https://lsptu36.com/mission/always' \
             -H 'content-length: 0')
           
-          if [[ "$response" == *"\"always\":\"1\""* ]]; then
-            echo "✅ 签到成功！当前积分: $response"
+          echo "服务器完整响应:"
+          echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
+          
+          # 尝试解析关键信息
+          if echo "$response" | grep -q '"always":"1"'; then
+            echo "签到结果: 今日签到已成功！"
+            credit=$(echo "$response" | grep -o '"credit":"[^"]*"' | head -1 | cut -d':' -f2 | tr -d '"')
+            my_credit=$(echo "$response" | grep -o '"my_credit":"[^"]*"' | head -1 | cut -d':' -f2 | tr -d '"')
+            echo "今日获得积分: $credit"
+            echo "当前总积分: $my_credit"
+          elif echo "$response" | grep -q '"always":"0"'; then
+            echo "签到结果: 今日尚未签到，但请求已发送。"
           else
-            echo "⚠️ 签到可能未成功，服务器响应: $response"
+            echo "无法解析签到状态，请检查响应内容。"
           fi
