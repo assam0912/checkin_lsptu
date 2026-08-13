@@ -2,15 +2,39 @@ name: 漫画站每日签到
 
 on:
   schedule:
-    - cron: '0 16 * * *'  # 每天凌晨12点执行
+    - cron: '0 16 * * *'  # 每天 UTC 16:00 (北京时间 0:00) 执行
   workflow_dispatch:      # 允许手动触发
 
 jobs:
   checkin:
     runs-on: ubuntu-latest
     steps:
-      - name: 执行签到请求
+      - name: 1. 获取签到状态 (唤醒会话)
         run: |
+          echo "正在获取签到状态，以激活会话..."
+          status_response=$(curl -s 'https://lsptu36.com/wp-json/b2/v1/getUserMission' \
+            -H 'authorization: ${{ secrets.AUTH_TOKEN }}' \
+            -H 'cookie: ${{ secrets.COOKIE }}' \
+            -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
+            -H 'referer: https://lsptu36.com/mission/always')
+          
+          echo "签到状态响应:"
+          echo "$status_response" | python3 -m json.tool 2>/dev/null || echo "$status_response"
+          
+          # 检查是否已签到
+          if echo "$status_response" | grep -q '"always":"1"'; then
+            echo "今日已签到，无需重复签到。"
+            my_credit=$(echo "$status_response" | grep -o '"my_credit":"[^"]*"' | head -1 | cut -d':' -f2 | tr -d '"')
+            echo "当前总积分: $my_credit"
+            exit 0
+          else
+            echo "今日尚未签到，将执行签到请求..."
+          fi
+
+      - name: 2. 执行签到请求
+        if: always()  # 确保即使上一步失败，也尝试签到
+        run: |
+          echo "正在执行签到..."
           response=$(curl -s -X POST 'https://lsptu36.com/wp-json/b2/v1/userMission' \
             -H 'authorization: ${{ secrets.AUTH_TOKEN }}' \
             -H 'cookie: ${{ secrets.COOKIE }}' \
@@ -31,7 +55,7 @@ jobs:
             echo "今日获得积分: $credit"
             echo "当前总积分: $my_credit"
           elif echo "$response" | grep -q '"always":"0"'; then
-            echo "签到结果: 今日尚未签到，但请求已发送。"
+            echo "签到结果: 请求已发送，但状态显示未签到，可能需要检查。"
           else
-            echo "今日已签到！"
+            echo "无法解析签到状态，请检查响应内容。"
           fi
