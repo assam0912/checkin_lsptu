@@ -13,11 +13,11 @@ jobs:
         id: check_status
         run: |
           echo "正在查询今日签到状态..."
-          status_response=$(curl -s -X POST 'https://lsptu36.com/wp-json/b2/v1/getUserMission' \
+          status_response=$(curl -s -X POST 'https://lsptu41.com/wp-json/b2/v1/getUserMission' \
             -H 'authorization: ${{ secrets.AUTH_TOKEN }}' \
             -H 'cookie: ${{ secrets.COOKIE }}' \
             -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
-            -H 'referer: https://lsptu36.com/mission/always' \
+            -H 'referer: https://lsptu41.com/mission/always' \
             -H 'content-type: application/x-www-form-urlencoded' \
             --data 'count=10&paged=1')
 
@@ -43,11 +43,11 @@ jobs:
         if: steps.check_status.outputs.already_signed == 'false'
         run: |
           echo "正在执行签到..."
-          response=$(curl -s -X POST 'https://lsptu36.com/wp-json/b2/v1/userMission' \
+          response=$(curl -s -X POST 'https://lsptu41.com/wp-json/b2/v1/userMission' \
             -H 'authorization: ${{ secrets.AUTH_TOKEN }}' \
             -H 'cookie: ${{ secrets.COOKIE }}' \
             -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
-            -H 'referer: https://lsptu36.com/mission/always' \
+            -H 'referer: https://lsptu41.com/mission/always' \
             -H 'content-length: 0')
 
           echo "--------------------------------------------"
