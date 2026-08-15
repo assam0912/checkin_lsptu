@@ -26,7 +26,7 @@ jobs:
           # echo "$status_response" | python3 -m json.tool 2>/dev/null || echo "$status_response"
           # echo "--------------------------------------------"
 
-          if echo "$status_response" | grep -q '"always":"1"'; then
+          if ! echo "$status_response" | grep -q '"credit":0'; then
             echo "今日已签到，无需重复签到。"
             # 从 mission.credit 获取今日获得的积分
             credit=$(echo "$status_response" | grep -o '"credit":"[^"]*"' | head -1 | cut -d':' -f2 | tr -d '"')
