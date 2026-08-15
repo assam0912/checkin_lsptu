@@ -61,8 +61,12 @@ jobs:
             my_credit=$(echo "$response" | grep -o '"my_credit":"[^"]*"' | head -1 | cut -d':' -f2 | tr -d '"')
             echo "今日获得积分: $credit"
             echo "当前总积分: $my_credit"
-          elif echo "$response" | grep -q '"always":"0"'; then
-            echo "签到结果: 请求已发送，但状态显示未签到，可能需要检查。"
+          elif echo "$response" | grep -qE '^[0-9]+$'; then
+            if (( response >= 1 && response <= 30 )); then
+              echo "今日已签到，无需重复签到，今日获取积分：$response"
+            else
+              echo "返回的数字 $response 不在 1-30 的有效范围内！"
+            fi
           else
             echo "无法解析签到状态，请检查响应内容。"
           fi
