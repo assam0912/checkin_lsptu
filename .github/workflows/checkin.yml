@@ -22,10 +22,10 @@ jobs:
             -H 'content-type: application/x-www-form-urlencoded' \
             --data 'count=10&paged=1')
 
-          echo "--------------------------------------------"
-          echo "签到状态响应:"
-          echo "$status_response" | python3 -m json.tool 2>/dev/null || echo "$status_response"
-          echo "--------------------------------------------"
+          # echo "--------------------------------------------"
+          # echo "签到状态响应:"
+          # echo "$status_response" | python3 -m json.tool 2>/dev/null || echo "$status_response"
+          # echo "--------------------------------------------"
 
           if ! echo "$status_response" | grep -q '"mission":{[^}]*"credit":"0"'; then
               echo "今日已签到，无需重复签到。"
