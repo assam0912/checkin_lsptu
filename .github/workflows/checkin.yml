@@ -2,8 +2,8 @@ name: 漫画站每日签到
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # 每天 0:00 执行
-      timezone: "Asia/Shanghai"  # 明确使用北京时间
+    - cron: '0 0 * * *'
+      timezone: "Asia/Shanghai"
   workflow_dispatch:
 
 jobs:
@@ -27,16 +27,18 @@ jobs:
           echo "$status_response" | python3 -m json.tool 2>/dev/null || echo "$status_response"
           echo "--------------------------------------------"
 
-          if ! echo "$status_response" | grep -q '"mission":{[^}]*"credit": 0'; then
-              echo "今日已签到，无需重复签到。"
-              credit=$(echo "$status_response" | grep -o '"mission":{[^}]*"credit":"[^"]*"' | grep -o '"credit":"[^"]*"' | cut -d':' -f2 | tr -d '"')
-              my_credit=$(echo "$status_response" | grep -o '"mission":{[^}]*"my_credit":"[^"]*"' | grep -o '"my_credit":"[^"]*"' | cut -d':' -f2 | tr -d '"')
-              echo "今日获得积分: $credit"
-              echo "当前总积分: $my_credit"
-              echo "already_signed=true" >> $GITHUB_OUTPUT
+          credit=$(echo "$status_response" | jq -r '.mission.credit // 0')
+          echo "mission.credit = [$credit]"
+
+          if [ "$credit" = "0" ]; then
+            echo "今日尚未签到，将执行签到请求..."
+            echo "already_signed=false" >> $GITHUB_OUTPUT
           else
-              echo "今日尚未签到，将执行签到请求..."
-              echo "already_signed=false" >> $GITHUB_OUTPUT
+            echo "今日已签到，无需重复签到。"
+            my_credit=$(echo "$status_response" | jq -r '.mission.my_credit // "0"')
+            echo "今日获得积分: $credit"
+            echo "当前总积分: $my_credit"
+            echo "already_signed=true" >> $GITHUB_OUTPUT
           fi
 
       - name: 执行签到请求
@@ -55,10 +57,10 @@ jobs:
           echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
           echo "--------------------------------------------"
 
-          if echo "$response" | grep -q '"always":"1"'; then
+          if echo "$response" | jq -e '.always == "1"' > /dev/null 2>&1; then
             echo "签到结果: 今日签到已成功！"
-            credit=$(echo "$response" | grep -o '"credit":"[^"]*"' | head -1 | cut -d':' -f2 | tr -d '"')
-            my_credit=$(echo "$response" | grep -o '"my_credit":"[^"]*"' | head -1 | cut -d':' -f2 | tr -d '"')
+            credit=$(echo "$response" | jq -r '.credit // 0')
+            my_credit=$(echo "$response" | jq -r '.my_credit // 0')
             echo "今日获得积分: $credit"
             echo "当前总积分: $my_credit"
           elif echo "$response" | grep -qE '^[0-9]+$'; then
