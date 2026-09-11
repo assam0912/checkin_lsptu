@@ -27,7 +27,7 @@ jobs:
           echo "$status_response" | python3 -m json.tool 2>/dev/null || echo "$status_response"
           echo "--------------------------------------------"
 
-          if ! echo "$status_response" | grep -q '"mission":{[^}]*"credit":"0"'; then
+          if ! echo "$status_response" | grep -q '"mission":{[^}]*"credit": 0'; then
               echo "今日已签到，无需重复签到。"
               credit=$(echo "$status_response" | grep -o '"mission":{[^}]*"credit":"[^"]*"' | grep -o '"credit":"[^"]*"' | cut -d':' -f2 | tr -d '"')
               my_credit=$(echo "$status_response" | grep -o '"mission":{[^}]*"my_credit":"[^"]*"' | grep -o '"my_credit":"[^"]*"' | cut -d':' -f2 | tr -d '"')
