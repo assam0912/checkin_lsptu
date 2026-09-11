@@ -22,10 +22,10 @@ jobs:
             -H 'content-type: application/x-www-form-urlencoded' \
             --data 'count=10&paged=1')
 
-          echo "--------------------------------------------"
-          echo "签到状态响应:"
-          echo "$status_response" | python3 -m json.tool 2>/dev/null || echo "$status_response"
-          echo "--------------------------------------------"
+          # echo "--------------------------------------------"
+          # echo "签到状态响应:"
+          # echo "$status_response" | python3 -m json.tool 2>/dev/null || echo "$status_response"
+          # echo "--------------------------------------------"
 
           credit=$(echo "$status_response" | jq -r '.mission.credit // 0')
           echo "mission.credit = [$credit]"
@@ -57,18 +57,26 @@ jobs:
           echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
           echo "--------------------------------------------"
 
-          if echo "$response" | jq -e '.always == "1"' > /dev/null 2>&1; then
-            echo "签到结果: 今日签到已成功！"
-            credit=$(echo "$response" | jq -r '.credit // 0')
-            my_credit=$(echo "$response" | jq -r '.my_credit // 0')
-            echo "今日获得积分: $credit"
-            echo "当前总积分: $my_credit"
-          elif echo "$response" | grep -qE '^[0-9]+$'; then
+          # 纯数字响应 = 已签到
+          if echo "$response" | grep -qE '^[0-9]+$'; then
             if (( response >= 1 && response <= 30 )); then
               echo "今日已签到，无需重复签到，今日获取积分：$response"
             else
               echo "返回的数字 $response 不在 1-30 的有效范围内！"
             fi
+            exit 0
+          fi
+
+          always=$(echo "$response" | jq -r '.mission.always // .always // "0"' 2>/dev/null)
+
+          if [ "$always" = "1" ]; then
+            echo "签到结果: 今日签到已成功！"
+            credit=$(echo "$response" | jq -r '.mission.credit // .credit // 0')
+            my_credit=$(echo "$response" | jq -r '.mission.my_credit // 0')
+            echo "今日获得积分: $credit"
+            echo "当前总积分: $my_credit"
           else
             echo "无法解析签到状态，请检查响应内容。"
+            echo "完整响应: $response"
+            exit 1
           fi
