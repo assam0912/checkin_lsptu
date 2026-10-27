@@ -9,73 +9,115 @@ jobs:
   checkin:
     runs-on: ubuntu-latest
     steps:
-      - name: 获取今日签到状态
-        id: check_status
+      - name: 设置 Python 环境 (用于识别验证码)
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 安装验证码识别库
         run: |
-          echo "正在查询今日签到状态..."
-          status_response=$(curl -s -X POST 'https://zly23.com/wp-json/b2/v1/getUserMission' \
+          python -m pip install --upgrade pip
+          pip install ddddocr Pillow
+
+      - name: 1. 获取挑战 (flashMissionStart)
+        id: step1_start
+        run: |
+          echo "正在获取签到挑战..."
+          response=$(curl -s -X POST 'https://zly23.com/wp-json/b2/v1/flashMissionStart' \
             -H 'authorization: ${{ secrets.AUTH_TOKEN }}' \
             -H 'cookie: ${{ secrets.COOKIE }}' \
             -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
-            -H 'referer: https://zly23.com.com/mission/always' \
-            -H 'content-type: application/x-www-form-urlencoded' \
-            --data 'count=10&paged=1')
+            -H 'referer: https://zly23.com/task')
 
-           echo "--------------------------------------------"
-           echo "签到状态响应:"
-           echo "$status_response" | python3 -m json.tool 2>/dev/null || echo "$status_response"
-           echo "--------------------------------------------"
-
-          credit=$(echo "$status_response" | jq -r '.mission.credit // 0')
-          echo "mission.credit = [$credit]"
-
-          if [ "$credit" = "0" ]; then
-            echo "今日尚未签到，将执行签到请求..."
-            echo "already_signed=false" >> $GITHUB_OUTPUT
-          else
-            echo "今日已签到，无需重复签到。"
-            my_credit=$(echo "$status_response" | jq -r '.mission.my_credit // "0"')
-            echo "今日获得积分: $credit"
-            echo "当前总积分: $my_credit"
-            echo "already_signed=true" >> $GITHUB_OUTPUT
+          challenge=$(echo "$response" | jq -r '.challenge // empty')
+          if [ -z "$challenge" ]; then
+            echo "获取 challenge 失败！响应: $response"
+            exit 1
           fi
+          echo "获取到 challenge: $challenge"
+          echo "challenge=$challenge" >> $GITHUB_OUTPUT
 
-      - name: 执行签到请求
-        if: steps.check_status.outputs.already_signed == 'false'
+      - name: 2. 回答站点问题并获取验证码图片 (flashMissionAnswer)
+        id: step2_answer
         run: |
-          echo "正在执行签到..."
+          challenge="${{ steps.step1_start.outputs.challenge }}"
+          echo "正在提交站点答案..."
+          
+          # 注意：这里的 answers[0] 使用 --data-urlencode 防止特殊字符被转义错误
+          response=$(curl -s -X POST 'https://zly23.com/wp-json/b2/v1/flashMissionAnswer' \
+            -H 'authorization: ${{ secrets.AUTH_TOKEN }}' \
+            -H 'cookie: ${{ secrets.COOKIE }}' \
+            -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
+            -H 'referer: https://zly23.com/task' \
+            -H 'content-type: application/x-www-form-urlencoded' \
+            --data-urlencode "challenge=$challenge" \
+            --data-urlencode "answers[0]=www.zcys.me")
+
+          # 提取 Base64 图片和 Token
+          captcha_base64=$(echo "$response" | jq -r '.captcha.base // empty')
+          captcha_token=$(echo "$response" | jq -r '.captcha.token // empty')
+          
+          if [ -z "$captcha_base64" ]; then
+            echo "获取验证码失败！响应: $response"
+            exit 1
+          fi
+          
+          # 将 Base64 图片保存到本地
+          echo "$captcha_base64" | sed 's/data:image\/png;base64,//' | base64 -d > captcha.png
+          echo "验证码图片已保存！"
+          
+          echo "captcha_token=$captcha_token" >> $GITHUB_OUTPUT
+
+      - name: 3. 使用 ddddocr 识别验证码
+        id: step3_ocr
+        run: |
+          cat << 'EOF' > ocr.py
+          import ddddocr
+          ocr = ddddocr.DdddOcr(show_ad=False)
+          with open("captcha.png", 'rb') as f:
+              img_bytes = f.read()
+          res = ocr.classification(img_bytes)
+          print(res)
+          EOF
+          
+          # 运行脚本并将结果保存到变量
+          OCR_RESULT=$(python ocr.py)
+          echo "识别结果: $OCR_RESULT"
+          echo "img_code=$OCR_RESULT" >> $GITHUB_OUTPUT
+
+      - name: 4. 提交最终签到 (userMission)
+        run: |
+          challenge="${{ steps.step1_start.outputs.challenge }}"
+          img_code="${{ steps.step3_ocr.outputs.img_code }}"
+          token="${{ steps.step2_answer.outputs.captcha_token }}"
+          
+          echo "正在提交签到..."
+          
+          # 注意这里多了 img_code 和 token 两个参数
           response=$(curl -s -X POST 'https://zly23.com/wp-json/b2/v1/userMission' \
             -H 'authorization: ${{ secrets.AUTH_TOKEN }}' \
             -H 'cookie: ${{ secrets.COOKIE }}' \
             -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
-            -H 'referer: https://zly23.com.com/mission/always' \
-            -H 'content-length: 0')
+            -H 'referer: https://zly23.com/task' \
+            -H 'content-type: application/x-www-form-urlencoded' \
+            --data-urlencode "challenge=$challenge" \
+            --data-urlencode "img_code=$img_code" \
+            --data-urlencode "token=$token")
 
           echo "--------------------------------------------"
           echo "签到响应:"
           echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
           echo "--------------------------------------------"
 
-          # 纯数字响应 = 已签到
-          if echo "$response" | grep -qE '^[0-9]+$'; then
-            if (( response >= 1 && response <= 30 )); then
-              echo "今日已签到，无需重复签到，今日获取积分：$response"
-            else
-              echo "返回的数字 $response 不在 1-30 的有效范围内！"
-            fi
-            exit 0
-          fi
-
-          always=$(echo "$response" | jq -r '.mission.always // .always // "0"' 2>/dev/null)
-
+          # 解析结果
+          always=$(echo "$response" | jq -r '.mission.always // "0"' 2>/dev/null)
           if [ "$always" = "1" ]; then
             echo "签到结果: 今日签到已成功！"
-            credit=$(echo "$response" | jq -r '.mission.credit // .credit // 0')
+            credit=$(echo "$response" | jq -r '.mission.credit // 0')
             my_credit=$(echo "$response" | jq -r '.mission.my_credit // 0')
             echo "今日获得积分: $credit"
             echo "当前总积分: $my_credit"
           else
-            echo "无法解析签到状态，请检查响应内容。"
-            echo "完整响应: $response"
+            echo "签到失败，请检查验证码是否识别错误或 Cookie 是否过期。"
             exit 1
           fi
