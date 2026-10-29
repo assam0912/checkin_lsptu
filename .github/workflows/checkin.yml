@@ -21,6 +21,19 @@ jobs:
             -H 'content-type: application/x-www-form-urlencoded' \
             --data 'count=10&paged=1')
 
+          # --- 打印完整的查询状态响应 ---
+          echo "--------------------------------------------"
+          echo "签到状态接口原始响应:"
+          echo "$status_response"
+          echo "--------------------------------------------"
+          # ------------------------------------
+
+          # 验证返回是否为合法的 JSON，如果 Cookie 失效可能会返回 HTML 报错页
+          if ! echo "$status_response" | jq empty 2>/dev/null; then
+            echo "错误：返回的内容不是合法的 JSON 格式（可能是 Cookie 过期或触发了 Cloudflare 防护）"
+            exit 1
+          fi
+
           credit=$(echo "$status_response" | jq -r '.mission.credit // 0')
           echo "mission.credit = [$credit]"
 
