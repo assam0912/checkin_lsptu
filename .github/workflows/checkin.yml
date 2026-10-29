@@ -21,16 +21,15 @@ jobs:
             -H 'content-type: application/x-www-form-urlencoded' \
             --data 'count=10&paged=1')
 
-          # --- 打印完整的查询状态响应 ---
           echo "--------------------------------------------"
           echo "签到状态接口原始响应:"
-          echo "$status_response"
+          # 使用 jq 格式化，如果 jq 失败（比如返回了 HTML）则原样输出
+          echo "$status_response" | jq . 2>/dev/null || echo "$status_response"
           echo "--------------------------------------------"
-          # ------------------------------------
 
-          # 验证返回是否为合法的 JSON，如果 Cookie 失效可能会返回 HTML 报错页
+          # 验证返回是否为合法的 JSON
           if ! echo "$status_response" | jq empty 2>/dev/null; then
-            echo "错误：返回的内容不是合法的 JSON 格式（可能是 Cookie 过期或更换了域名）"
+            echo "错误：返回的内容不是合法的 JSON 格式（可能是 Cookie 过期或触发了 Cloudflare 防护）"
             exit 1
           fi
 
@@ -71,9 +70,14 @@ jobs:
             -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
             -H 'referer: https://zly26.com/task')
 
+          echo "--------------------------------------------"
+          echo "获取挑战接口响应:"
+          echo "$response" | jq . 2>/dev/null || echo "$response"
+          echo "--------------------------------------------"
+
           challenge=$(echo "$response" | jq -r '.challenge // empty')
           if [ -z "$challenge" ]; then
-            echo "获取 challenge 失败！响应: $response"
+            echo "获取 challenge 失败！"
             exit 1
           fi
           echo "获取到 challenge: $challenge"
@@ -95,12 +99,18 @@ jobs:
             --data-urlencode "challenge=$challenge" \
             --data-urlencode "answers[0]=www.zcys.me")
 
+          echo "--------------------------------------------"
+          echo "获取验证码接口响应 (Base64已省略):"
+          # 因为 Base64 字符串太长了，格式化打印时会刷屏，所以我们只打印不带 base 字段的 JSON 结构
+          echo "$response" | jq 'del(.captcha.base)' 2>/dev/null || echo "解析JSON失败"
+          echo "--------------------------------------------"
+
           # 提取 token 和 base64
           captcha_token=$(echo "$response" | jq -r '.captcha.token // empty')
           captcha_base64=$(echo "$response" | jq -r '.captcha.base // empty')
           
           if [ -z "$captcha_base64" ] || [ "$captcha_base64" == "null" ]; then
-            echo "获取验证码失败！响应: $response"
+            echo "获取验证码失败！完整响应: $response"
             exit 1
           fi
           
@@ -124,7 +134,7 @@ jobs:
           EOF
           
           OCR_RESULT=$(python ocr.py)
-          echo "识别结果: $OCR_RESULT"
+          echo "验证码识别结果: $OCR_RESULT"
           echo "img_code=$OCR_RESULT" >> $GITHUB_OUTPUT
 
       - name: 4. 提交最终签到 (userMission)
@@ -147,8 +157,8 @@ jobs:
             --data-urlencode "token=$token")
 
           echo "--------------------------------------------"
-          echo "签到响应:"
-          echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
+          echo "最终签到接口响应:"
+          echo "$response" | jq . 2>/dev/null || echo "$response"
           echo "--------------------------------------------"
 
           # 解析结果（沿用你之前的兼容逻辑，纯数字或JSON都可以）
