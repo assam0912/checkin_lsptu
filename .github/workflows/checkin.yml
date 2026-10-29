@@ -2,7 +2,7 @@ name: 漫画站每日签到
 
 on:
   schedule:
-    - cron: '0 16 * * *'
+    - cron: '0 13 * * *'
   workflow_dispatch:
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
 
           # 验证返回是否为合法的 JSON
           if ! echo "$status_response" | jq empty 2>/dev/null; then
-            echo "错误：返回的内容不是合法的 JSON 格式（可能是 Cookie 过期或触发了 Cloudflare 防护）"
+            echo "错误：返回的内容不是合法的 JSON 格式（可能是 Cookie 过期或更换了域名）"
             exit 1
           fi
 
@@ -101,7 +101,7 @@ jobs:
 
           echo "--------------------------------------------"
           echo "获取验证码接口响应 (Base64已省略):"
-          # 因为 Base64 字符串太长了，格式化打印时会刷屏，所以我们只打印不带 base 字段的 JSON 结构
+          # 因为 Base64 字符串太长了，格式化打印时会刷屏，所以只打印不带 base 字段的 JSON 结构
           echo "$response" | jq 'del(.captcha.base)' 2>/dev/null || echo "解析JSON失败"
           echo "--------------------------------------------"
 
