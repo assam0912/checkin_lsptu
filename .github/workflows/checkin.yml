@@ -83,48 +83,46 @@ jobs:
           echo "获取到 challenge: $challenge"
           echo "challenge=$challenge" >> $GITHUB_OUTPUT
 
-      - name: 2. 回答站点问题并保存验证码图片 (flashMissionAnswer)
-        id: step2_answer
+      - name: 2. 获取验证码、识别并提交 (带重试)
         if: steps.check_status.outputs.already_signed == 'false'
         run: |
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          SUCCESS=false
+          
+          # 获取上一步的 challenge
           challenge="${{ steps.step1_start.outputs.challenge }}"
-          echo "正在提交站点答案..."
-          
-          response=$(curl -s -X POST 'https://zly26.com/wp-json/b2/v1/flashMissionAnswer' \
-            -H 'authorization: ${{ secrets.AUTH_TOKEN }}' \
-            -H 'cookie: ${{ secrets.COOKIE }}' \
-            -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
-            -H 'referer: https://zly26.com/task' \
-            -H 'content-type: application/x-www-form-urlencoded' \
-            --data-urlencode "challenge=$challenge" \
-            --data-urlencode "answers[0]=www.zcys.me")
 
-          echo "--------------------------------------------"
-          echo "获取验证码接口响应 (Base64已省略):"
-          # 因为 Base64 字符串太长了，格式化打印时会刷屏，所以只打印不带 base 字段的 JSON 结构
-          echo "$response" | jq 'del(.captcha.base)' 2>/dev/null || echo "解析JSON失败"
-          echo "--------------------------------------------"
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = false ]; do
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "============================================"
+            echo "第 $RETRY_COUNT 次尝试获取并识别验证码 (最多 $MAX_RETRIES 次)"
+            echo "============================================"
 
-          # 提取 token 和 base64
-          captcha_token=$(echo "$response" | jq -r '.captcha.token // empty')
-          captcha_base64=$(echo "$response" | jq -r '.captcha.base // empty')
-          
-          if [ -z "$captcha_base64" ] || [ "$captcha_base64" == "null" ]; then
-            echo "获取验证码失败！完整响应: $response"
-            exit 1
-          fi
-          
-          echo "captcha_token=$captcha_token" >> $GITHUB_OUTPUT
-          
-          # 将 Base64 数据转成图片保存
-          echo "$captcha_base64" | sed 's/data:image\/png;base64,//' | base64 -d > captcha.png
-          echo "验证码图片 captcha.png 已保存！"
+            # --- 2.1 获取验证码 ---
+            echo "正在提交站点答案并获取新验证码..."
+            answer_response=$(curl -s -X POST 'https://zly26.com/wp-json/b2/v1/flashMissionAnswer' \
+              -H 'authorization: ${{ secrets.AUTH_TOKEN }}' \
+              -H 'cookie: ${{ secrets.COOKIE }}' \
+              -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
+              -H 'referer: https://zly26.com/task' \
+              -H 'content-type: application/x-www-form-urlencoded' \
+              --data-urlencode "challenge=$challenge" \
+              --data-urlencode "answers[0]=www.zcys.me")
 
-      - name: 3. 使用 ddddocr 识别验证码
-        id: step3_ocr
-        if: steps.check_status.outputs.already_signed == 'false'
-        run: |
-          cat << 'EOF' > ocr.py
+            captcha_token=$(echo "$answer_response" | jq -r '.captcha.token // empty')
+            captcha_base64=$(echo "$answer_response" | jq -r '.captcha.base // empty')
+            
+            if [ -z "$captcha_base64" ] || [ "$captcha_base64" == "null" ]; then
+              echo "获取验证码失败！响应: $answer_response"
+              continue # 失败则跳过本次循环重试
+            fi
+            
+            # 保存验证码图片
+            echo "$captcha_base64" | sed 's/data:image\/png;base64,//' | base64 -d > captcha.png
+            
+            # --- 2.2 OCR 识别 ---
+            cat << 'EOF' > ocr.py
           import ddddocr
           ocr = ddddocr.DdddOcr(show_ad=False)
           with open("captcha.png", 'rb') as f:
@@ -132,49 +130,54 @@ jobs:
           res = ocr.classification(img_bytes)
           print(res)
           EOF
-          
-          OCR_RESULT=$(python ocr.py)
-          echo "验证码识别结果: $OCR_RESULT"
-          echo "img_code=$OCR_RESULT" >> $GITHUB_OUTPUT
+            
+            img_code=$(python ocr.py)
+            echo "OCR 识别结果: [$img_code]"
 
-      - name: 4. 提交最终签到 (userMission)
-        if: steps.check_status.outputs.already_signed == 'false'
-        run: |
-          challenge="${{ steps.step1_start.outputs.challenge }}"
-          img_code="${{ steps.step3_ocr.outputs.img_code }}"
-          token="${{ steps.step2_answer.outputs.captcha_token }}"
-          
-          echo "正在提交签到..."
-          
-          response=$(curl -s -X POST 'https://zly26.com/wp-json/b2/v1/userMission' \
-            -H 'authorization: ${{ secrets.AUTH_TOKEN }}' \
-            -H 'cookie: ${{ secrets.COOKIE }}' \
-            -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
-            -H 'referer: https://zly26.com/task' \
-            -H 'content-type: application/x-www-form-urlencoded' \
-            --data-urlencode "challenge=$challenge" \
-            --data-urlencode "img_code=$img_code" \
-            --data-urlencode "token=$token")
+            # --- 2.3 提交最终签到 ---
+            echo "正在提交签到..."
+            final_response=$(curl -s -X POST 'https://zly26.com/wp-json/b2/v1/userMission' \
+              -H 'authorization: ${{ secrets.AUTH_TOKEN }}' \
+              -H 'cookie: ${{ secrets.COOKIE }}' \
+              -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' \
+              -H 'referer: https://zly26.com/task' \
+              -H 'content-type: application/x-www-form-urlencoded' \
+              --data-urlencode "challenge=$challenge" \
+              --data-urlencode "img_code=$img_code" \
+              --data-urlencode "token=$captcha_token")
 
-          echo "--------------------------------------------"
-          echo "最终签到接口响应:"
-          echo "$response" | jq . 2>/dev/null || echo "$response"
-          echo "--------------------------------------------"
+            echo "接口响应:"
+            echo "$final_response" | jq . 2>/dev/null || echo "$final_response"
 
-          # 解析结果（沿用你之前的兼容逻辑，纯数字或JSON都可以）
-          if echo "$response" | grep -qE '^[0-9]+$'; then
-             echo "签到成功，返回数字: $response"
-             exit 0
-          fi
+            # --- 2.4 判断结果 ---
+            if echo "$final_response" | grep -q "验证码错误或失效"; then
+              echo "❌ 验证码识别错误，准备重试..."
+              sleep 2 # 等待 2 秒，避免请求过快
+              continue # 进入下一次重试
+            fi
 
-          always=$(echo "$response" | jq -r '.mission.always // "0"' 2>/dev/null)
-          if [ "$always" = "1" ]; then
-            echo "签到结果: 今日签到已成功！"
-            credit=$(echo "$response" | jq -r '.mission.credit // 0')
-            my_credit=$(echo "$response" | jq -r '.mission.my_credit // 0')
-            echo "今日获得积分: $credit"
-            echo "当前总积分: $my_credit"
-          else
-            echo "签到失败，可能验证码识别错误，请重试或检查日志。"
+            if echo "$final_response" | grep -qE '^[0-9]+$'; then
+              echo "✅ 签到成功，返回数字: $final_response"
+              SUCCESS=true
+              break
+            fi
+
+            always=$(echo "$final_response" | jq -r '.mission.always // "0"' 2>/dev/null)
+            if [ "$always" = "1" ]; then
+              credit=$(echo "$final_response" | jq -r '.mission.credit // 0')
+              my_credit=$(echo "$final_response" | jq -r '.mission.my_credit // 0')
+              echo "✅ 签到结果: 今日签到已成功！"
+              echo "今日获得积分: $credit"
+              echo "当前总积分: $my_credit"
+              SUCCESS=true
+              break
+            fi
+
+            echo "❌ 签到失败，遇到了未知错误。不再重试。"
+            exit 1
+          done
+
+          if [ "$SUCCESS" = false ]; then
+            echo "⚠️ 已达到最大重试次数 ($MAX_RETRIES 次)，今日签到失败。"
             exit 1
           fi
