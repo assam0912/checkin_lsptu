@@ -86,7 +86,7 @@ jobs:
       - name: 2. 获取验证码、识别并提交 (带重试)
         if: steps.check_status.outputs.already_signed == 'false'
         run: |
-          MAX_RETRIES=5
+          MAX_RETRIES=20
           RETRY_COUNT=0
           SUCCESS=false
           
@@ -148,7 +148,7 @@ jobs:
             echo "接口响应:"
             echo "$final_response" | jq . 2>/dev/null || echo "$final_response"
 
-            # --- 2.4 判断结果（已修复） ---
+            # --- 2.4 判断结果 ---
             # 直接匹配返回的 code 字段
             if echo "$final_response" | grep -q "flash_mission_captcha"; then
               echo "验证码识别错误，准备重试..."
